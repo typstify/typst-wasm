@@ -1,0 +1,55 @@
+[package]
+name = "typst-wasm"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+authors = [ "zjzhang <zhangzj33@gmail.com>" ]
+repository = "https://github.com/typstify/typst-wasm"
+description = "Compile Typst sources inside a WebAssembly runtime"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+typst = "0.15.1"
+typst-assets = { version = "0.15.1", features = ["fonts"] }
+typst-layout = "0.15.1"
+typst-library = "0.15.1"
+typst-pdf = "0.15.1"
+typst-render = "0.15.1"
+typst-svg = "0.15.1"
+typst-syntax = "0.15.1"
+typst-utils = "0.15.1"
+tsify = { version = "0.5", features = ["js"] }
+wasm-bindgen = "0.2.129"
+chrono = { version = "0.4.45", features = ["std", "wasmbind"] } 
+bytes = "1.12.1"
+
+# Force miniz_oxide so it doesn't try to link native C libraries during Wasm compilation
+flate2 = {version = "1.1.10", default-features = false, features = ["miniz_oxide"]}
+tar = "0.4.46"
+comemo = "0.5.1"
+js-sys = "0.3.106"
+
+
+# Keep the wasm binary small.
+[profile.release]
+opt-level = "z"
+# wazero bug: if lto is set to true, the module returns incorrect result.
+lto = true
+strip = true
+
+[package.metadata.wasm-pack.profile.release]
+# Or we can set WASM_OPT_ARGS="--enable-bulk-memory" to run wasm-pack build 
+# wasm-opt = false
+
+wasm-opt = [
+  "-O",
+  "--enable-bulk-memory",
+  "--enable-sign-ext",
+  "--enable-nontrapping-float-to-int",
+]
