@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Use Typst in browser!</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.4 system-ui, sans-serif;
+        display: grid;
+        grid-template-columns: minmax(280px, 40%) 1fr;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+      }
+      header {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 12px;
+        border-bottom: 1px solid #ddd;
+      }
+      header h1 { font-size: 15px; margin: 0; }
+      header .ver { color: #888; font-size: 12px; }
+      textarea {
+        width: 100%;
+        height: 100%;
+        resize: none;
+        border: none;
+        border-right: 1px solid #ddd;
+        padding: 12px;
+        font: 13px/1.5 ui-monospace, monospace;
+        outline: none;
+      }
+      #right { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+      #toolbar { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #eee; }
+      button { padding: 4px 10px; cursor: pointer; }
+      #diagnostics { max-height: 30%; overflow: auto; padding: 0 12px; }
+      .diag { margin: 6px 0; padding: 6px 8px; border-left: 3px solid; font-size: 12px; }
+      .diag.error { border-color: #d33; background: #fdecec; }
+      .diag.warning { border-color: #e6a700; background: #fff7e0; }
+      .diag .loc { color: #666; }
+      .diag .hint { color: #555; }
+      #preview { flex: 1; overflow: auto; padding: 12px; background: #f5f5f5; }
+      #preview svg { display: block; margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+      #status { margin-left: auto; color: #666; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Typst in the browser</h1>
+      <span class="ver" id="version"></span>
+      <span id="status"></span>
+    </header>
+
+    <textarea id="source" spellcheck="false">= Hello Typst!
+This document is compiled entirely in your browser via WebAssembly.
+
+#let x = 3
+The value is #x, and $x^2 = #calc.pow(x, 2)$.
+
+- Edit the source on the left
+- Press *Compile* (or just keep typing)
+
+#pagebreak()
+
+== Page two
+#lorem(40)</textarea>
+
+    <div id="right">
+      <div id="toolbar">
+        <button id="compile">Compile</button>
+        <button id="pdf">Download PDF</button>
+        <button id="png">Download PNG</button>
+        <button id="zoom-in">A+</button>
+        <button id="zoom-out">A-</button>
+      </div>
+      <div id="diagnostics"></div>
+      <div id="preview"></div>
+    </div>
+
+    <script type="module">
+      import { Engine, version } from "../pkg/typst_wasm.js";
+
+      const engine = new Engine();
+      const encoder = new TextEncoder();
+
+      const sourceEl = document.getElementById("source");
+      const previewEl = document.getElementById("preview");
+      const diagEl = document.getElementById("diagnostics");
+      const statusEl = document.getElementById("status");
+      document.getElementById("version").textContent = `Typst ${version()}`;
+
+      let zoom = 1;
+
+      // The WASM world has no clock; push the current time before each compile
+      // so PDF timestamps and `datetime.today()` work.
+      function setToday() {
+        const d = new Date();
+        engine.set_today(
+          d.getFullYear(), d.getMonth() + 1, d.getDate(),
+          d.getHours(), d.getMinutes(), d.getSeconds()
+        );
+      }
+
+      function renderDiagnostics(diags) {
+        diagEl.replaceChildren();
+        for (const d of diags ?? []) {
+          const el = document.createElement("div");
+          el.className = `diag ${d.severity}`;
+          const loc = d.location
+            ? `${d.location.file}:${d.location.line}:${d.location.column}`
+            : "no location";
+          el.append(`${d.severity.toUpperCase()} (${loc}): ${d.message}`);
+          for (const hint of d.hints ?? []) {
+            const h = document.createElement("div");
+            h.className = "hint";
+            h.textContent = `hint: ${hint}`;
+            el.append(h);
+          }
+          diagEl.append(el);
+        }
+      }
+
+      function paintPreview(result) {
+        previewEl.replaceChildren();
+        for (let i = 0; i < (result.pages?.length ?? 0); i++) {
+          const svg = engine.render_page(i);
+          if (!svg) continue;
+          const box = document.createElement("div");
+          box.innerHTML = svg;
+          const svgEl = box.firstElementChild;
+          if (svgEl) {
+            // Scale by zoom (page dimensions are in points).
+            svgEl.setAttribute("width", result.pages[i].width * zoom);
+            svgEl.setAttribute("height", result.pages[i].height * zoom);
+          }
+          previewEl.append(box);
+        }
+      }
+
+      function compile() {
+        try {
+          engine.set_file("main.typ", encoder.encode(sourceEl.value));
+        } catch (err) {
+          statusEl.textContent = `file error: ${err}`;
+          return;
+        }
+        setToday();
+
+        let result;
+        try {
+          result = engine.compile("main.typ");
+        } catch (err) {
+          // compile() only throws for engine-level errors, not Typst errors.
+          statusEl.textContent = `engine error: ${err}`;
+          return;
+        }
+
+        renderDiagnostics(result.diagnostics);
+        paintPreview(result);
+
+        const errors = result.diagnostics.filter((d) => d.severity === "error").length;
+        statusEl.textContent = errors
+          ? `${errors} error(s) — showing last successful layout`
+          : `${result.pages.length} page(s)`;
+      }
+
+      function download(bytes, type, name) {
+        const url = URL.createObjectURL(new Blob([bytes], { type }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      function downloadPdf() {
+        try {
+          // null standards => plain PDF; pass e.g. ["a-2b"] for PDF/A-2b.
+          const bytes = engine.render_pdf(null, false);
+          download(bytes, "application/pdf", "output.pdf");
+        } catch (diags) {
+          // On failure the binding throws an array of Diagnostic objects.
+          renderDiagnostics(diags);
+          statusEl.textContent = "PDF export failed";
+        }
+      }
+
+      function downloadPng() {
+        const pages = engine.render_png(144); // 144 ppi
+        if (!pages.length) {
+          statusEl.textContent = "PNG export failed";
+          return;
+        }
+        download(pages[0], "image/png", "output.png");
+      }
+
+      // Wire up UI.
+      document.getElementById("compile").onclick = compile;
+      document.getElementById("pdf").onclick = downloadPdf;
+      document.getElementById("png").onclick = downloadPng;
+      document.getElementById("zoom-in").onclick = () => { zoom *= 1.25; compile(); };
+      document.getElementById("zoom-out").onclick = () => { zoom /= 1.25; compile(); };
+
+      // Debounced live compile.
+      let timer;
+      sourceEl.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(compile, 100);
+      });
+
+      compile();
+    </script>
+  </body>
+</html>

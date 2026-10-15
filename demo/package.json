@@ -1,0 +1,16 @@
+{
+  "name": "typst-wasm-demo",
+  "version": "1.0.0",
+  "description": "Demo webapp using typst-wasm",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite-plugin-wasm": "^3.6.0"
+  }
+}
