@@ -25,9 +25,9 @@ use wasm_bindgen::prelude::*;
 /// after each compile to bound memory across an editing session.
 const COMEMO_MAX_AGE: usize = 20;
 
-// version returns the version of the typst compiler.
+/// typst_version returns the version of the typst compiler.
 #[wasm_bindgen]
-pub fn version() -> String {
+pub fn typst_version() -> String {
     typst_utils::version().raw().to_string()
 }
 

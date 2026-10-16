@@ -3,18 +3,20 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use typst::ecow::EcoString;
 
 use typst::diag::{FileError, FileResult};
 use typst::foundations::{Bytes, Datetime, Duration};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
+use typst_ide::IdeWorld;
 use typst_layout::PagedDocument;
 use typst_syntax::package::PackageSpec;
 use typst_syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 
 use crate::errors::EngineErr;
-use crate::package::{UnpackSummary, unpacked_package};
+use crate::package::{PackageRegistry, UnpackSummary, unpacked_package};
 use crate::vfs::Vfs;
 
 /// An in-memory Typst project world.
@@ -24,6 +26,10 @@ pub struct Workspace {
     packages_dir: PathBuf,
     /// Project root directory (sources, images, data files).
     root: PathBuf,
+
+    /// External packages metadata to faciliate auto-completion of package
+    /// importsduring editing.
+    package_registry: PackageRegistry,
 
     library: LazyHash<Library>,
     book: LazyHash<FontBook>,
@@ -47,6 +53,7 @@ impl Default for Workspace {
             vfs: Vfs::new(),
             packages_dir: PathBuf::from("packages"),
             root: PathBuf::from("src"),
+            package_registry: PackageRegistry::new(),
 
             library: LazyHash::new(Library::default()),
             book: LazyHash::new(book),
@@ -77,10 +84,14 @@ impl Workspace {
         unpacked_package(
             &mut self.vfs,
             &self.packages_dir,
-            spec,
+            &spec,
             tgz_bytes,
             max_total,
         )
+        .and_then(|v| {
+            self.package_registry.add(&spec, None);
+            Ok(v)
+        })
     }
 
     /// Add a typst package to the workspace. The content of the package is normalized to
@@ -104,6 +115,8 @@ impl Workspace {
             }
         }
 
+        self.package_registry.add(&spec, None);
+
         Ok(())
     }
 
@@ -118,8 +131,15 @@ impl Workspace {
             .map_err(|os_str| EngineErr::PathError(os_str.to_string_lossy().to_string()))?;
 
         self.vfs.remove_by_prefix(&pkg_root);
+        self.package_registry.remove(&spec);
 
         Ok(())
+    }
+
+    /// add user accessible package list to the workspace, so the editor can use this to generate
+    /// completion items when importing packages.
+    pub fn set_accessible_packages(&mut self, packages: &[(PackageSpec, Option<String>)]) {
+        self.package_registry.add_many(packages);
     }
 
     /// add a font to the workspace by providing a font file name and file content.
@@ -344,5 +364,24 @@ impl World for Workspace {
                 )
             }
         }
+    }
+}
+
+impl IdeWorld for Workspace {
+    fn upcast(&self) -> &dyn World {
+        self
+    }
+
+    /// A list of all available packages and optionally descriptions for them.
+    ///
+    /// This function is **optional** to implement. It enhances the user
+    /// experience by enabling autocompletion for packages.
+    fn packages(&self) -> &[(PackageSpec, Option<EcoString>)] {
+        self.package_registry.all()
+    }
+
+    /// Returns a list of all known files.
+    fn files(&self) -> Vec<FileId> {
+        self.vfs.all().collect()
     }
 }

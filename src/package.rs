@@ -1,18 +1,56 @@
 //! Helper to unpack a Typst package into the VFS.
 
 use flate2::read::GzDecoder;
-use tsify::Tsify;
 use serde::Serialize;
 use std::error::Error;
 use std::io;
 use std::path::Path;
 use tar::Archive;
+use tsify::Tsify;
+use typst::ecow::EcoString;
 use typst_syntax::VirtualRoot;
 use typst_syntax::package::PackageSpec;
 
 use crate::errors::EngineErr;
 use crate::vfs::Vfs;
 
+/// A package name and description registry used by [IdeWorld] to generate
+/// imports completion items.
+pub(crate) struct PackageRegistry {
+    // Owned storage so `IdeWorld::packages` can return a borrow into it.
+    // Package lists are small, so linear scans are fine.
+    packages: Vec<(PackageSpec, Option<EcoString>)>,
+}
+
+impl PackageRegistry {
+    pub fn new() -> Self {
+        Self {
+            packages: Vec::new(),
+        }
+    }
+
+    pub fn add_many(&mut self, packages: &[(PackageSpec, Option<String>)]) {
+        for (spec, desc) in packages {
+            self.add(spec, desc.as_ref().cloned());
+        }
+    }
+
+    pub fn add(&mut self, spec: &PackageSpec, desc: Option<String>) {
+        let desc = desc.map(EcoString::from);
+        match self.packages.iter_mut().find(|(s, _)| s == spec) {
+            Some(entry) => entry.1 = desc,
+            None => self.packages.push((spec.clone(), desc)),
+        }
+    }
+
+    pub fn remove(&mut self, spec: &PackageSpec) {
+        self.packages.retain(|(s, _)| s != spec);
+    }
+
+    pub fn all(&self) -> &[(PackageSpec, Option<EcoString>)] {
+        &self.packages
+    }
+}
 
 #[derive(Debug, Serialize, Tsify, Clone, PartialEq, Eq)]
 pub struct UnpackSummary {
@@ -23,7 +61,7 @@ pub struct UnpackSummary {
 pub(crate) fn unpacked_package(
     vfs: &mut Vfs,
     packages_dir: &Path,
-    spec: PackageSpec,
+    spec: &PackageSpec,
     tgz_bytes: &[u8],
     max_total: u64,
 ) -> Result<UnpackSummary, Box<dyn Error>> {

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use std::collections::HashMap;
-use typst::diag::FileError;
+use typst::{diag::FileError};
 use typst_library::diag::FileResult;
 use typst_syntax::{FileId, RootedPath, VirtualPath, VirtualRoot};
 
@@ -38,7 +38,7 @@ impl Vfs {
             .ok_or_else(|| FileError::NotFound(id.vpath().get_with_slash().into()))
     }
 
-    pub fn all(&self) -> impl Iterator {
+    pub fn all(&self) -> impl Iterator<Item = FileId> {
         self.files.keys().copied()
     }
 

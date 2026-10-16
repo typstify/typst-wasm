@@ -2489,6 +2489,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "typst-ide"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ffbba2bc8bb6b08410e4ee6f8ca04f12e79c9f42d37d03b0776870a8920c08b"
+dependencies = [
+ "comemo",
+ "ecow",
+ "indexmap",
+ "rustc-hash",
+ "serde",
+ "typst",
+ "typst-eval",
+ "typst-html",
+ "typst-layout",
+ "typst-utils",
+ "unscanny",
+]
+
+[[package]]
 name = "typst-layout"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2764,6 +2783,7 @@ dependencies = [
  "tsify",
  "typst",
  "typst-assets",
+ "typst-ide",
  "typst-layout",
  "typst-library",
  "typst-pdf",
