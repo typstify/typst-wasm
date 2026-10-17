@@ -3,6 +3,7 @@
 mod compile;
 mod diagnostics;
 mod errors;
+mod ide;
 mod package;
 mod vfs;
 mod world;
@@ -12,10 +13,13 @@ use std::str::FromStr;
 use tsify::{Ts, Tsify, serde_wasm_bindgen};
 use typst_syntax::package::PackageSpec;
 
+pub use crate::ide::completion::{Completion, CompletionKind, CompletionResult, auto_complete};
+
 pub use crate::compile::{
     CompileResult, PageInfo, compile, render_page, render_pages, render_pdf, render_png,
 };
 pub use crate::diagnostics::{Diagnostic, Location, Severity};
+use crate::ide::hover::{HoverTooltip, on_hover};
 pub use crate::world::Workspace;
 
 use js_sys::Uint8Array;
@@ -207,5 +211,38 @@ impl Engine {
                     .collect()
             })
             .map_err(|err| JsError::from(err.as_ref()))
+    }
+
+    pub fn auto_complete(
+        &self,
+        source: &str,
+        explicit: bool,
+        cursor: usize,
+    ) -> Result<Ts<CompletionResult>, JsError> {
+        let id = self
+            .workspace
+            .source_id(source)
+            .map_err(|err| JsError::from(err.as_ref()))?;
+
+        auto_complete(&self.workspace, id, explicit, cursor)
+            .and_then(|c| {
+                let ts = c.into_ts()?;
+                Ok(ts)
+            })
+            .map_err(|err| JsError::from(err.as_ref()))
+    }
+
+    pub fn hover(&self, source: &str, cursor: usize) -> Option<Ts<HoverTooltip>> {
+        let Ok(id) = self.workspace.source_id(source) else {
+            return None;
+        };
+
+        on_hover(&self.workspace, id, cursor).and_then(|v| {
+            let Ok(ts) = v.into_ts() else {
+                return None;
+            };
+
+            Some(ts)
+        })
     }
 }

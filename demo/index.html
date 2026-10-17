@@ -81,7 +81,7 @@ The value is #x, and $x^2 = #calc.pow(x, 2)$.
     </div>
 
     <script type="module">
-      import { Engine, version } from "../pkg/typst_wasm.js";
+      import { Engine, typst_version } from "../pkg/typst_wasm.js";
 
       const engine = new Engine();
       const encoder = new TextEncoder();
@@ -90,7 +90,7 @@ The value is #x, and $x^2 = #calc.pow(x, 2)$.
       const previewEl = document.getElementById("preview");
       const diagEl = document.getElementById("diagnostics");
       const statusEl = document.getElementById("status");
-      document.getElementById("version").textContent = `Typst ${version()}`;
+      document.getElementById("version").textContent = `Typst ${typst_version()}`;
 
       let zoom = 1;
 

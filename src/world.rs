@@ -2,7 +2,7 @@ use chrono::{Datelike, FixedOffset, Local, Timelike, Utc};
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use typst::ecow::EcoString;
 
 use typst::diag::{FileError, FileResult};
@@ -171,6 +171,17 @@ impl Workspace {
         self.fonts = fonts;
     }
 
+    pub fn source_id(&self, file_path: &str) -> Result<FileId, Box<dyn Error>> {
+        let path = self
+            .root
+            .join(file_path)
+            .into_os_string()
+            .into_string()
+            .map_err(|os_str| EngineErr::PathError(os_str.to_string_lossy().to_string()))?;
+
+        Ok(Vfs::file_id(VirtualRoot::Project, &path)?)
+    }
+
     /// Insert or replace normal files into the user workspace.
     /// The `file_path` is a path relative to the workspace `source_dir`.
     pub fn set_file(&mut self, file_path: &str, bytes: Vec<u8>) -> Result<(), Box<dyn Error>> {
@@ -258,6 +269,11 @@ impl Workspace {
     {
         let doc = self.document.lock().unwrap();
         doc.as_ref().map(func)
+    }
+
+    // Get a mutex guared document reference for use outside the world.
+    pub fn document(&self) -> Result<MutexGuard<'_, Option<PagedDocument>>, &'static str> {
+        self.document.lock().map_err(|_| "document mutex poisoned")
     }
 
     /// Resolves a virtual file ID to a real path on the VFS.
