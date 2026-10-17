@@ -1,13 +1,13 @@
 //! Error enum for the engine.
-use std::fmt;
 use std::error::Error;
+use std::fmt;
 
 /// EngineErr implements [`std::error::Error`]
-#[derive(Debug)] 
+#[derive(Debug)]
 pub enum EngineErr {
     PathError(String),
     UnpackError,
-} 
+}
 
 impl fmt::Display for EngineErr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

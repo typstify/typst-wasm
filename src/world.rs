@@ -89,7 +89,7 @@ impl Workspace {
             max_total,
         )
         .and_then(|v| {
-            self.package_registry.add(&spec, None);
+            self.package_registry.add(spec, None);
             Ok(v)
         })
     }
@@ -115,7 +115,7 @@ impl Workspace {
             }
         }
 
-        self.package_registry.add(&spec, None);
+        self.package_registry.add(spec, None);
 
         Ok(())
     }
@@ -138,7 +138,7 @@ impl Workspace {
 
     /// add user accessible package list to the workspace, so the editor can use this to generate
     /// completion items when importing packages.
-    pub fn set_accessible_packages(&mut self, packages: &[(PackageSpec, Option<String>)]) {
+    pub fn set_accessible_packages(&mut self, packages: Vec<(PackageSpec, Option<String>)>) {
         self.package_registry.add_many(packages);
     }
 

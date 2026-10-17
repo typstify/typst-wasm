@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use std::collections::HashMap;
-use typst::{diag::FileError};
+use typst::diag::FileError;
 use typst_library::diag::FileResult;
 use typst_syntax::{FileId, RootedPath, VirtualPath, VirtualRoot};
 

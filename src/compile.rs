@@ -75,7 +75,7 @@ pub fn render_page(workspace: &Workspace, index: usize) -> Option<String> {
 
 /// Render a range of pages of the last compiled document to SVGs. If there is no
 //// cached document or the range start >= end, a empty list of SVGs is returned.
-/// 
+///
 /// Page range are inclusive at both boundaries.
 pub fn render_pages(workspace: &Workspace, pages: Option<Range<usize>>) -> Vec<String> {
     workspace
@@ -97,7 +97,7 @@ pub fn render_pages(workspace: &Workspace, pages: Option<Range<usize>>) -> Vec<S
 
 /// Render the last compiled document to PDF bytes. If there is no cached document, it
 /// returns an empty `Vec`. Diagnotics are returned as [`Err`] when there is any.
-/// 
+///
 /// Page range are inclusive at both boundaries.
 pub fn render_pdf(
     workspace: &Workspace,
@@ -141,8 +141,8 @@ pub fn render_pdf(
 }
 
 /// Render the fist page of the last compiled document to PNG. If there is no cached document, it
-/// returns an empty `Vec`. 
-/// 
+/// returns an empty `Vec`.
+///
 /// Page range are inclusive at both boundaries.
 pub fn render_png(
     workspace: &Workspace,
@@ -155,7 +155,7 @@ pub fn render_png(
             return vec![];
         }
         let Range { start, end } = pages.clone().unwrap_or(0..all_pages.len());
-        let end = end.min(all_pages.len()-1);
+        let end = end.min(all_pages.len() - 1);
         if start >= end {
             return Vec::new();
         }

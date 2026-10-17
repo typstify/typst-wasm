@@ -19,11 +19,18 @@ pub use crate::diagnostics::{Diagnostic, Location, Severity};
 pub use crate::world::Workspace;
 
 use js_sys::Uint8Array;
+use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
 /// How many compile generations of memoized results `comemo` retains. Trimmed
 /// after each compile to bound memory across an editing session.
 const COMEMO_MAX_AGE: usize = 20;
+
+#[derive(Deserialize, Tsify, Clone, PartialEq, Eq, Debug)]
+struct PackageMeta {
+    pub spec: String,
+    pub desc: Option<String>,
+}
 
 /// typst_version returns the version of the typst compiler.
 #[wasm_bindgen]
@@ -68,6 +75,25 @@ impl Engine {
         self.workspace
             .remove_package(parsed_spec)
             .map_err(|e| JsError::from(e.as_ref()))
+    }
+
+    /// add user accessible package list to the workspace, so the editor can use this to generate
+    /// completion candidates when importing packages.
+    pub fn set_accessible_packages(&mut self, packages: JsValue) -> Result<(), JsError> {
+        let packages: Vec<PackageMeta> =
+            serde_wasm_bindgen::from_value(packages).map_err(|e| JsError::new(&e.to_string()))?;
+
+        let pkgs: Vec<(PackageSpec, Option<String>)> = packages
+            .into_iter()
+            .map(|PackageMeta { spec, desc }| {
+                PackageSpec::from_str(&spec)
+                    .map(|spec| (spec, desc))
+                    .map_err(|e| JsError::new(e.as_str()))
+            })
+            .collect::<Result<_, _>>()?;
+
+        self.workspace.set_accessible_packages(pkgs);
+        Ok(())
     }
 
     /// add font to the workspace.
@@ -136,10 +162,10 @@ impl Engine {
     }
 
     /// Render the last compiled document to PDF bytes. If there is no cached document, it
-    /// returns an empty list. 
-    /// 
+    /// returns an empty list.
+    ///
     /// Page range is specified as start_page(inclusive) and end_page(inclusive).
-    /// 
+    ///
     /// Diagnotics are returned when there is any.
     pub fn render_pdf(
         &self,
@@ -159,8 +185,8 @@ impl Engine {
     }
 
     /// Render the fist page of the last compiled document to PNG. If there is no cached document, it
-    /// returns an empty list. 
-    /// 
+    /// returns an empty list.
+    ///
     /// Page range is specified as start_page(inclusive) and end_page(inclusive).
     pub fn render_png(
         &self,

@@ -29,17 +29,17 @@ impl PackageRegistry {
         }
     }
 
-    pub fn add_many(&mut self, packages: &[(PackageSpec, Option<String>)]) {
+    pub fn add_many(&mut self, packages: Vec<(PackageSpec, Option<String>)>) {
         for (spec, desc) in packages {
             self.add(spec, desc.as_ref().cloned());
         }
     }
 
-    pub fn add(&mut self, spec: &PackageSpec, desc: Option<String>) {
+    pub fn add(&mut self, spec: PackageSpec, desc: Option<String>) {
         let desc = desc.map(EcoString::from);
-        match self.packages.iter_mut().find(|(s, _)| s == spec) {
+        match self.packages.iter_mut().find(|(s, _)| s == &spec) {
             Some(entry) => entry.1 = desc,
-            None => self.packages.push((spec.clone(), desc)),
+            None => self.packages.push((spec, desc)),
         }
     }
 
