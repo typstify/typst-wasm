@@ -13,7 +13,6 @@ use tsify::Tsify;
 use typst::layout::{PageRange, PageRanges};
 use typst::{self, World};
 use typst_pdf::{PdfOptions, PdfStandard, PdfStandards, Timestamp};
-use typst_render;
 use typst_svg::svg;
 
 /// The width and height of a rendered page, in points.
@@ -66,15 +65,17 @@ pub fn compile(
 pub fn render_page(workspace: &Workspace, index: usize) -> Option<String> {
     workspace
         .map_document(|doc| {
-            doc.pages()
-                .get(index)
-                .map(|page| svg(page, &Default::default()))
+            Some(
+                doc.pages()
+                    .get(index)
+                    .map(|page| svg(page, &Default::default())),
+            )
         })
         .flatten()
 }
 
 /// Render a range of pages of the last compiled document to SVGs. If there is no
-//// cached document or the range start >= end, a empty list of SVGs is returned.
+/// cached document or the range start >= end, a empty list of SVGs is returned.
 ///
 /// Page range are inclusive at both boundaries.
 pub fn render_pages(workspace: &Workspace, pages: Option<Range<usize>>) -> Vec<String> {
@@ -84,13 +85,14 @@ pub fn render_pages(workspace: &Workspace, pages: Option<Range<usize>>) -> Vec<S
             let Range { start, end } = pages.clone().unwrap_or(0..all_pages.len());
             let end = end.min(all_pages.len());
             if start >= end {
-                return Vec::new();
+                return None;
             }
 
-            all_pages[start..end]
+            let all = all_pages[start..end]
                 .iter()
                 .map(|page| svg(page, &Default::default()))
-                .collect()
+                .collect();
+            Some(all)
         })
         .unwrap_or_default()
 }
@@ -124,7 +126,7 @@ pub fn render_pdf(
             ..Default::default()
         };
 
-        typst_pdf::pdf(doc, &pdf_options)
+        Some(typst_pdf::pdf(doc, &pdf_options))
     });
 
     let Some(pdf_output) = result else {
@@ -151,13 +153,13 @@ pub fn render_png(
 ) -> Result<Vec<Bytes>, Box<dyn Error>> {
     let result = workspace.map_document(|doc| {
         let all_pages = doc.pages();
-        if all_pages.len() == 0 {
-            return vec![];
+        if all_pages.is_empty() {
+            return None;
         }
         let Range { start, end } = pages.clone().unwrap_or(0..all_pages.len());
         let end = end.min(all_pages.len() - 1);
         if start >= end {
-            return Vec::new();
+            return None;
         }
 
         let mut pixmaps: Vec<Bytes> = Vec::with_capacity(end - start + 1);
@@ -176,7 +178,7 @@ pub fn render_png(
             };
         }
 
-        pixmaps
+        Some(pixmaps)
     });
 
     let Some(png_output) = result else {
@@ -201,13 +203,15 @@ fn with_pdf_standards(standard_names: &Vec<String>) -> Vec<PdfStandard> {
 fn collect_page_info(workspace: &Workspace) -> Vec<PageInfo> {
     workspace
         .map_document(|doc| {
-            doc.pages()
-                .iter()
-                .map(|page| PageInfo {
-                    width: page.frame.width().to_pt(),
-                    height: page.frame.height().to_pt(),
-                })
-                .collect()
+            Some(
+                doc.pages()
+                    .iter()
+                    .map(|page| PageInfo {
+                        width: page.frame.width().to_pt(),
+                        height: page.frame.height().to_pt(),
+                    })
+                    .collect(),
+            )
         })
         .unwrap_or_default()
 }

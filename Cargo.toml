@@ -35,6 +35,7 @@ tar = "0.4.46"
 comemo = "0.5.1"
 js-sys = "0.3.106"
 typst-ide = "0.15.1"
+typstyle-core = { version = "0.15.2", features = ["serde"] }
 
 
 # Keep the wasm binary small.

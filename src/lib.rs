@@ -12,7 +12,9 @@ use std::str::FromStr;
 
 use tsify::{Ts, Tsify, serde_wasm_bindgen};
 use typst_syntax::package::PackageSpec;
+use typstyle_core::Config;
 
+use crate::ide::click_jump::{self, ClickJump, CursorJump};
 pub use crate::ide::completion::{Completion, CompletionKind, CompletionResult, auto_complete};
 
 pub use crate::compile::{
@@ -20,6 +22,7 @@ pub use crate::compile::{
 };
 pub use crate::diagnostics::{Diagnostic, Location, Severity};
 use crate::ide::hover::{HoverTooltip, on_hover};
+use crate::ide::{format, highlight};
 pub use crate::world::Workspace;
 
 use js_sys::Uint8Array;
@@ -215,13 +218,13 @@ impl Engine {
 
     pub fn auto_complete(
         &self,
-        source: &str,
+        source_path: &str,
         explicit: bool,
         cursor: usize,
     ) -> Result<Ts<CompletionResult>, JsError> {
         let id = self
             .workspace
-            .source_id(source)
+            .source_id(source_path)
             .map_err(|err| JsError::from(err.as_ref()))?;
 
         auto_complete(&self.workspace, id, explicit, cursor)
@@ -232,8 +235,8 @@ impl Engine {
             .map_err(|err| JsError::from(err.as_ref()))
     }
 
-    pub fn hover(&self, source: &str, cursor: usize) -> Option<Ts<HoverTooltip>> {
-        let Ok(id) = self.workspace.source_id(source) else {
+    pub fn hover(&self, source_path: &str, cursor: usize) -> Option<Ts<HoverTooltip>> {
+        let Ok(id) = self.workspace.source_id(source_path) else {
             return None;
         };
 
@@ -244,5 +247,82 @@ impl Engine {
 
             Some(ts)
         })
+    }
+
+    /// Highlight typst source to list of [highlight::HighlightSpan]. Offsets of `from` and `to` are
+    /// bytes offset. Spans may nest and the result ensures parent spans always emit first.
+    ///
+    /// This method does not depends on a compiled document.
+    pub fn highlight(&self, source: &str, from: usize, to: usize) -> Option<JsValue> {
+        if source.is_empty() {
+            return None;
+        }
+
+        let spans = highlight::highlight_source(source, from, to);
+        Some(serde_wasm_bindgen::to_value(&spans).unwrap())
+    }
+
+    /// Highlight typst source to html fragment wrapped in \<code\> element.
+    ///
+    /// This method does not depends on a compiled document.
+    pub fn highlight_to_html(&self, source: &str) -> Option<String> {
+        if source.is_empty() {
+            return None;
+        }
+
+        Some(highlight::highlight_to_html(source))
+    }
+
+    /// Format typst source using specified format config, returning the formatted source.
+    ///
+    /// `format_cfg` is deserialized to [`Config`] internally, to see all possible config keys,
+    /// refer to the `Config` document.
+    pub fn format_source(&self, source_path: &str, format_cfg: Option<JsValue>) -> Option<String> {
+        let Ok(id) = self.workspace.source_id(source_path) else {
+            return None;
+        };
+
+        let format_cfg =
+            format_cfg.and_then(|val| serde_wasm_bindgen::from_value::<Config>(val).ok());
+
+        format::format_source(&self.workspace, id, format_cfg)
+    }
+
+    /// Resolve a click on the page of the cached document into a source file location,
+    /// or an internal link in the page, or an external URL. Returns `None` if there
+    /// is no cached document, or the page is out of range, or the click hit nothing actionable.
+    ///
+    /// page_index is zero-based page index. x, y is the pixel position in the page.
+    pub fn on_page_click_jump(&self, page_index: usize, x: f64, y: f64) -> Option<Ts<ClickJump>> {
+        click_jump::on_page_click_jump(&self.workspace, page_index, x, y).and_then(|c| {
+            let Ok(ts) = c.into_ts() else {
+                return None;
+            };
+
+            Some(ts)
+        })
+    }
+
+    /// Detect the position in the laied-out document to jump to when a source cursor moves.
+    /// When the source_path is not inside the world, or no target position is found, None
+    /// is returned.
+    pub fn on_source_cursor_jump(
+        &self,
+        source_path: &str,
+        cursor: usize,
+    ) -> Option<Ts<CursorJump>> {
+        click_jump::on_source_cursor_jump(&self.workspace, source_path, cursor).and_then(|c| {
+            let Ok(ts) = c.into_ts() else {
+                return None;
+            };
+
+            Some(ts)
+        })
+    }
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
     }
 }

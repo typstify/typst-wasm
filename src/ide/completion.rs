@@ -103,7 +103,7 @@ pub fn auto_complete(
     if let Some((from, completions)) = autocomplete(world, doc.as_ref(), &source, cursor, explicit)
     {
         return Ok(CompletionResult {
-            from: from,
+            from,
             completions: completions.iter().map(|comp| comp.into()).collect(),
         });
     }

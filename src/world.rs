@@ -88,9 +88,8 @@ impl Workspace {
             tgz_bytes,
             max_total,
         )
-        .and_then(|v| {
+        .inspect(|_| {
             self.package_registry.add(spec, None);
-            Ok(v)
         })
     }
 
@@ -265,10 +264,10 @@ impl Workspace {
     /// Maps the PagedDocument to R by applying func to the reference of [`PagedDocument`].
     pub fn map_document<F, R>(&self, func: F) -> Option<R>
     where
-        F: Fn(&PagedDocument) -> R,
+        F: Fn(&PagedDocument) -> Option<R>,
     {
         let doc = self.document.lock().unwrap();
-        doc.as_ref().map(func)
+        doc.as_ref().and_then(func)
     }
 
     // Get a mutex guared document reference for use outside the world.
@@ -277,8 +276,7 @@ impl Workspace {
     }
 
     /// Resolves a virtual file ID to a real path on the VFS.
-    #[allow(unused)]
-    fn id_to_path(&self, id: FileId) -> FileResult<PathBuf> {
+    pub fn id_to_path(&self, id: FileId) -> FileResult<PathBuf> {
         let vpath = id.vpath();
         match id.root() {
             VirtualRoot::Project => vpath.realize(&self.root),
