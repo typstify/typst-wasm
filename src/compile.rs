@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(result.pages.len(), 1);
 
         let output = compile::render_page(&ws, 0).expect("render failed");
-        assert!(output.len() > 0);
+        assert!(!output.is_empty());
     }
 
     #[test]
@@ -293,7 +293,7 @@ mod tests {
         assert_eq!(result.pages.len(), 2);
 
         let output = compile::render_pages(&ws, (0..2).into());
-        assert!(output.len() == 2);
+        assert_eq!(output.len(), 2);
     }
 
     #[test]
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(result.pages.len(), 1);
 
         let output = compile::render_pdf(&ws, None, true, None).expect("export png failed");
-        assert!(output.len() > 0);
+        assert!(!output.is_empty());
     }
 
     #[test]

@@ -26,9 +26,21 @@ impl Vfs {
         self.files.remove(&id);
     }
 
-    pub fn remove_by_prefix(&mut self, prefix: &str) {
-        self.files
-            .retain(|key, _| key.vpath().get_with_slash() != prefix);
+    /// Remove entries when the closure match_func returns true, returning
+    /// all the FileIds of removed files.
+    pub fn remove_where<F>(&mut self, match_func: F) -> Vec<FileId>
+    where
+        F: Fn(FileId) -> bool,
+    {
+        let mut removed = Vec::new();
+        self.files.retain(|key, _| {
+            let matched = match_func(*key);
+            if matched {
+                removed.push(*key);
+            }
+            !matched
+        });
+        removed
     }
 
     pub fn lookup(&self, id: FileId) -> FileResult<Bytes> {
@@ -58,8 +70,13 @@ impl Vfs {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use crate::vfs::Vfs;
-    use typst_syntax::VirtualRoot::Project;
+    use typst_syntax::{
+        VirtualRoot::{Package, Project},
+        package::PackageSpec,
+    };
 
     #[test]
     fn test_vfs_set() {
@@ -100,5 +117,25 @@ mod tests {
                 panic!("lookup vfs failed: {}", err);
             }
         }
+    }
+
+    #[test]
+    fn test_file_id() {
+        use std::str::FromStr;
+
+        //let vfs = Vfs::new();
+        let spec = PackageSpec::from_str("@preview/demo:1.2.3").unwrap();
+        let id = Vfs::file_id(Package(spec.clone()), "typst.toml").unwrap();
+
+        let root = Path::new("packages/")
+            .join(spec.namespace.as_str())
+            .join(spec.name.as_str())
+            .join(spec.version.to_string());
+        let vpath = id.vpath().realize(&root).unwrap();
+
+        assert_eq!(
+            vpath.as_os_str().to_str().unwrap(),
+            "packages/preview/demo/1.2.3/typst.toml"
+        );
     }
 }

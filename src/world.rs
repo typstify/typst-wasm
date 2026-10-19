@@ -1,7 +1,7 @@
 use chrono::{Datelike, FixedOffset, Local, Timelike, Utc};
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use typst::ecow::EcoString;
 
@@ -81,14 +81,7 @@ impl Workspace {
         tgz_bytes: &[u8],
         max_total: u64,
     ) -> Result<UnpackSummary, Box<dyn Error>> {
-        unpacked_package(
-            &mut self.vfs,
-            &self.packages_dir,
-            &spec,
-            tgz_bytes,
-            max_total,
-        )
-        .inspect(|_| {
+        unpacked_package(&mut self.vfs, &spec, tgz_bytes, max_total).inspect(|_| {
             self.package_registry.add(spec, None);
         })
     }
@@ -100,17 +93,13 @@ impl Workspace {
         spec: PackageSpec,
         files: HashMap<String, Vec<u8>>,
     ) -> Result<(), Box<dyn Error>> {
-        let pkg_root = self
-            .packages_dir
-            .join(spec.namespace.to_string())
-            .join(spec.name.to_string())
-            .join(spec.version.to_string());
-
         for (file, bytes) in files.into_iter() {
-            let file_path = pkg_root.join(file).into_os_string().into_string();
-            if let Ok(path) = file_path {
-                let id = Vfs::file_id(VirtualRoot::Package(spec.clone()), &path)?;
+            let file_path = Path::new(&file).as_os_str().to_str();
+            if let Some(path) = file_path {
+                let id = Vfs::file_id(VirtualRoot::Package(spec.clone()), path)?;
                 self.vfs.set(id, bytes);
+            } else {
+                return Err(Box::new(EngineErr::PathError(file.clone())));
             }
         }
 
@@ -119,18 +108,23 @@ impl Workspace {
         Ok(())
     }
 
+    /// Remove a package from the workspace. Parsed sources of the removed package are dropped
+    ///  as well, otherwise the compiler would keep serving them from the cache.
     pub fn remove_package(&mut self, spec: PackageSpec) -> Result<(), Box<dyn Error>> {
-        let pkg_root = self
-            .packages_dir
-            .join(spec.namespace.to_string())
-            .join(spec.name.to_string())
-            .join(spec.version.to_string())
-            .into_os_string()
-            .into_string()
-            .map_err(|os_str| EngineErr::PathError(os_str.to_string_lossy().to_string()))?;
+        let removed = self.vfs.remove_where(|id| {
+            if let VirtualRoot::Package(pkg_spec) = id.root()
+                && *pkg_spec == spec
+            {
+                return true;
+            }
 
-        self.vfs.remove_by_prefix(&pkg_root);
-        self.package_registry.remove(&spec);
+            false
+        });
+
+        let mut sources = self.sources.lock().unwrap();
+        for id in removed {
+            sources.remove(&id);
+        }
 
         Ok(())
     }
@@ -139,6 +133,11 @@ impl Workspace {
     /// completion items when importing packages.
     pub fn set_accessible_packages(&mut self, packages: Vec<(PackageSpec, Option<String>)>) {
         self.package_registry.add_many(packages);
+    }
+
+    // Clear all accessible package list.
+    pub fn clear_accessible_packages(&mut self) {
+        self.package_registry.clear();
     }
 
     /// add a font to the workspace by providing a font file name and file content.
@@ -171,27 +170,13 @@ impl Workspace {
     }
 
     pub fn source_id(&self, file_path: &str) -> Result<FileId, Box<dyn Error>> {
-        let path = self
-            .root
-            .join(file_path)
-            .into_os_string()
-            .into_string()
-            .map_err(|os_str| EngineErr::PathError(os_str.to_string_lossy().to_string()))?;
-
-        Ok(Vfs::file_id(VirtualRoot::Project, &path)?)
+        Ok(Vfs::file_id(VirtualRoot::Project, file_path)?)
     }
 
     /// Insert or replace normal files into the user workspace.
     /// The `file_path` is a path relative to the workspace `source_dir`.
     pub fn set_file(&mut self, file_path: &str, bytes: Vec<u8>) -> Result<(), Box<dyn Error>> {
-        let path = self
-            .root
-            .join(file_path)
-            .into_os_string()
-            .into_string()
-            .map_err(|os_str| EngineErr::PathError(os_str.to_string_lossy().to_string()))?;
-
-        let id = Vfs::file_id(VirtualRoot::Project, &path)?;
+        let id = Vfs::file_id(VirtualRoot::Project, file_path)?;
 
         // only process text files.
         let mut src = self.sources.lock().unwrap();
@@ -217,14 +202,7 @@ impl Workspace {
     /// Remove normal files from the user workspace.
     /// The `file_path` is a path relative to the workspace `source_dir`.
     pub fn remove_file(&mut self, file_path: &str) -> Result<(), Box<dyn Error>> {
-        let path = self
-            .root
-            .join(file_path)
-            .into_os_string()
-            .into_string()
-            .map_err(|os_str| EngineErr::PathError(os_str.to_string_lossy().to_string()))?;
-
-        let id = Vfs::file_id(VirtualRoot::Project, &path)?;
+        let id = Vfs::file_id(VirtualRoot::Project, file_path)?;
 
         // only process text files.
         let mut src = self.sources.lock().unwrap();
@@ -235,14 +213,7 @@ impl Workspace {
     }
 
     pub fn set_entry(&mut self, entry: &str) -> Result<(), Box<dyn Error>> {
-        let path = self
-            .root
-            .join(entry)
-            .into_os_string()
-            .into_string()
-            .map_err(|os_str| EngineErr::PathError(os_str.to_string_lossy().to_string()))?;
-
-        self.main_file = Vfs::file_id(VirtualRoot::Project, &path).unwrap();
+        self.main_file = Vfs::file_id(VirtualRoot::Project, entry).unwrap();
 
         Ok(())
     }
@@ -397,5 +368,291 @@ impl IdeWorld for Workspace {
     /// Returns a list of all known files.
     fn files(&self) -> Vec<FileId> {
         self.vfs.all().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use std::io::Write;
+    use std::str::FromStr;
+
+    fn package_spec() -> PackageSpec {
+        PackageSpec::from_str("@preview/demo:1.2.3").unwrap()
+    }
+
+    fn package_file_id(spec: &PackageSpec, path: &str) -> FileId {
+        Vfs::file_id(VirtualRoot::Package(spec.clone()), path).unwrap()
+    }
+
+    const PACKAGE_MANIFEST: &[u8] =
+        b"[package]\nname = \"demo\"\nversion = \"1.2.3\"\nentrypoint = \"src/lib.typ\"\n";
+
+    const PACKAGE_ENTRIES: &[(&str, &[u8])] = &[
+        ("typst.toml", PACKAGE_MANIFEST),
+        (
+            "src/lib.typ",
+            b"#import \"util.typ\": punctuation\n#let greeting = [Hello from package] + punctuation",
+        ),
+        ("src/util.typ", b"#let punctuation = [.]"),
+    ];
+
+    fn assert_package_import_compiles(ws: &mut Workspace) {
+        ws.set_file(
+            "main.typ",
+            b"#import \"@preview/demo:1.2.3\": greeting\n#greeting".to_vec(),
+        )
+        .expect("set file error");
+
+        let result = crate::compile::compile(ws, "main.typ").expect("compile failed");
+
+        assert_eq!(result.diagnostics.len(), 0);
+        assert_eq!(result.pages.len(), 1);
+    }
+
+    /// Build an in-memory `.tar.gz` archive from `(path, content)` entries.
+    fn make_tgz(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (path, data) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, path, *data).unwrap();
+        }
+
+        let tar = builder.into_inner().unwrap();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&tar).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn test_new_workspace_defaults() {
+        let ws = Workspace::new();
+
+        assert_eq!(ws.root, PathBuf::from("src"));
+        assert_eq!(ws.packages_dir, PathBuf::from("packages"));
+        assert!(ws.package_registry.all().is_empty());
+        assert!(!ws.fonts.is_empty());
+        assert!(ws.map_document(|_| Some(())).is_none());
+    }
+
+    #[test]
+    fn test_set_file_and_read_back() {
+        let mut ws = Workspace::new();
+        ws.set_file("chapters/intro.typ", b"= Intro".to_vec())
+            .expect("set file error");
+
+        let id = ws.source_id("chapters/intro.typ").unwrap();
+        assert_eq!(ws.source(id).unwrap().text(), "= Intro");
+        assert_eq!(ws.file(id).unwrap().to_vec(), b"= Intro");
+        assert_eq!(
+            ws.id_to_path(id).unwrap(),
+            PathBuf::from("src/chapters/intro.typ")
+        );
+    }
+
+    #[test]
+    fn test_missing_file_returns_error() {
+        let ws = Workspace::new();
+        let id = ws.source_id("missing.typ").unwrap();
+
+        assert!(ws.source(id).is_err());
+        assert!(ws.file(id).is_err());
+    }
+
+    #[test]
+    fn test_set_file_refreshes_cached_source() {
+        let mut ws = Workspace::new();
+        ws.set_file("main.typ", b"old".to_vec()).unwrap();
+        let id = ws.source_id("main.typ").unwrap();
+
+        // Populate the source cache before replacing the file.
+        assert_eq!(ws.source(id).unwrap().text(), "old");
+
+        ws.set_file("main.typ", b"new".to_vec()).unwrap();
+        assert_eq!(ws.source(id).unwrap().text(), "new");
+    }
+
+    #[test]
+    fn test_set_file_non_utf8_drops_cached_source() {
+        let mut ws = Workspace::new();
+        ws.set_file("main.typ", b"old".to_vec()).unwrap();
+        let id = ws.source_id("main.typ").unwrap();
+        assert!(ws.source(id).is_ok());
+
+        ws.set_file("main.typ", vec![0xff, 0xfe]).unwrap();
+
+        // The stale text must not be served after the bytes became non-UTF-8.
+        assert!(ws.source(id).is_err());
+        assert_eq!(ws.file(id).unwrap().to_vec(), vec![0xff, 0xfe]);
+    }
+
+    #[test]
+    fn test_remove_file_clears_source_and_vfs() {
+        let mut ws = Workspace::new();
+        ws.set_file("main.typ", b"hello".to_vec()).unwrap();
+        let id = ws.source_id("main.typ").unwrap();
+        assert!(ws.source(id).is_ok());
+
+        ws.remove_file("main.typ").unwrap();
+
+        assert!(ws.source(id).is_err());
+        assert!(ws.file(id).is_err());
+        assert_eq!(ws.vfs.size(), 0);
+    }
+
+    #[test]
+    fn test_set_entry_changes_main_file() {
+        let mut ws = Workspace::new();
+        ws.set_file("chapter.typ", b"= Chapter".to_vec()).unwrap();
+
+        ws.set_entry("chapter.typ").unwrap();
+
+        assert_eq!(ws.main(), ws.source_id("chapter.typ").unwrap());
+    }
+
+    #[test]
+    fn test_add_and_remove_package() {
+        let mut ws = Workspace::new();
+        ws.set_file("main.typ", b"project".to_vec()).unwrap();
+
+        let spec = package_spec();
+        let files = HashMap::from([
+            ("typst.toml".to_string(), b"[package]".to_vec()),
+            ("src/lib.typ".to_string(), b"#let x = 1".to_vec()),
+        ]);
+        ws.add_package(spec.clone(), files).unwrap();
+
+        assert_eq!(ws.vfs.size(), 3);
+        assert_eq!(ws.package_registry.all().len(), 1);
+
+        let lib_id = package_file_id(&spec, "src/lib.typ");
+        assert_eq!(ws.source(lib_id).unwrap().text(), "#let x = 1");
+        assert_eq!(
+            ws.id_to_path(lib_id).unwrap(),
+            PathBuf::from("packages/preview/demo/1.2.3/src/lib.typ")
+        );
+
+        ws.remove_package(spec).unwrap();
+
+        // Only the package files are removed; project files stay put.
+        assert_eq!(ws.vfs.size(), 1);
+        assert!(ws.source(lib_id).is_err());
+        let main_id = ws.source_id("main.typ").unwrap();
+        assert_eq!(ws.source(main_id).unwrap().text(), "project");
+    }
+
+    #[test]
+    fn test_add_package_tar() {
+        let mut ws = Workspace::new();
+        let spec = package_spec();
+        let entries: &[(&str, &[u8])] =
+            &[("typst.toml", b"[package]"), ("src/lib.typ", b"#let x = 1")];
+        let tgz = make_tgz(entries);
+
+        let summary = ws
+            .add_package_tar(spec.clone(), &tgz, 1024 * 1024)
+            .expect("add package tar failed");
+
+        let expected_bytes: u64 = entries.iter().map(|(_, data)| data.len() as u64).sum();
+        assert_eq!(summary.files, 2);
+        assert_eq!(summary.bytes, expected_bytes);
+        assert_eq!(ws.vfs.size(), 2);
+        assert_eq!(ws.package_registry.all().len(), 1);
+
+        let id = package_file_id(&spec, "src/lib.typ");
+        assert_eq!(ws.file(id).unwrap().to_vec(), b"#let x = 1");
+    }
+
+    #[test]
+    fn test_compile_with_package_import() {
+        let mut ws = Workspace::new();
+        let files = PACKAGE_ENTRIES
+            .iter()
+            .map(|(path, data)| (path.to_string(), data.to_vec()))
+            .collect();
+
+        ws.add_package(package_spec(), files).unwrap();
+
+        assert_package_import_compiles(&mut ws);
+    }
+
+    #[test]
+    fn test_compile_with_package_import_from_tar() {
+        let mut ws = Workspace::new();
+        let tgz = make_tgz(PACKAGE_ENTRIES);
+
+        ws.add_package_tar(package_spec(), &tgz, 1024 * 1024)
+            .expect("add package tar failed");
+
+        assert_package_import_compiles(&mut ws);
+    }
+
+    #[test]
+    fn test_add_package_tar_respects_size_limit() {
+        let mut ws = Workspace::new();
+        let tgz = make_tgz(&[("src/lib.typ", b"12345")]);
+
+        let err = ws
+            .add_package_tar(package_spec(), &tgz, 4)
+            .expect_err("package should exceed the byte limit");
+
+        assert_eq!(err.to_string(), "unpack package error");
+        assert!(ws.package_registry.all().is_empty());
+        assert_eq!(ws.vfs.size(), 0);
+    }
+
+    #[test]
+    fn test_set_accessible_packages() {
+        let mut ws = Workspace::new();
+        let first = package_spec();
+        let second = PackageSpec::from_str("@preview/other:0.1.0").unwrap();
+
+        ws.set_accessible_packages(vec![
+            (first.clone(), Some("demo package".into())),
+            (second.clone(), None),
+        ]);
+
+        assert_eq!(ws.package_registry.all().len(), 2);
+        assert_eq!(
+            ws.package_registry.all()[0],
+            (first, Some(EcoString::from("demo package")))
+        );
+        assert_eq!(ws.package_registry.all()[1].0, second);
+    }
+
+    #[test]
+    fn test_set_today() {
+        let mut ws = Workspace::new();
+        let expected = Datetime::from_ymd_hms(2024, 2, 29, 12, 34, 56).unwrap();
+
+        ws.set_today(2024, 2, 29, 12, 34, 56);
+        assert_eq!(ws.today(None), Some(expected));
+
+        // Invalid dates are ignored and keep the last valid value.
+        ws.set_today(2023, 2, 29, 0, 0, 0);
+        assert_eq!(ws.today(None), Some(expected));
+    }
+
+    #[test]
+    fn test_add_font_and_clear_fonts() {
+        let mut ws = Workspace::new();
+        let embedded = ws.fonts.len();
+        let font = typst_assets::fonts()
+            .next()
+            .expect("embedded fonts should not be empty")
+            .to_vec();
+
+        let families = ws.add_font(font);
+
+        assert!(!families.is_empty());
+        assert!(ws.fonts.len() > embedded);
+
+        ws.clear_fonts();
+        assert_eq!(ws.fonts.len(), embedded);
     }
 }

@@ -103,6 +103,10 @@ impl Engine {
         Ok(())
     }
 
+    // Clear all accessible package list.
+    pub fn clear_accessible_packages(&mut self) {
+        self.workspace.clear_accessible_packages();
+    }
     /// add font to the workspace.
     pub fn add_font(&mut self, bytes: Vec<u8>) -> Vec<String> {
         self.workspace.add_font(bytes)
