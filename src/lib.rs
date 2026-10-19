@@ -21,8 +21,10 @@ pub use crate::compile::{
     CompileResult, PageInfo, compile, render_page, render_pages, render_pdf, render_png,
 };
 pub use crate::diagnostics::{Diagnostic, Location, Severity};
+use crate::ide::highlight::HighlightSpan;
 use crate::ide::hover::{HoverTooltip, on_hover};
 use crate::ide::{format, highlight};
+use crate::package::UnpackSummary;
 pub use crate::world::Workspace;
 
 use js_sys::Uint8Array;
@@ -66,12 +68,12 @@ impl Engine {
         spec: &str,
         tgz_files: Vec<u8>,
         max_total: u64,
-    ) -> Result<JsValue, JsError> {
+    ) -> Result<Ts<UnpackSummary>, JsError> {
         let parsed_spec = PackageSpec::from_str(spec).map_err(|e| JsError::new(&e))?;
 
         self.workspace
             .add_package_tar(parsed_spec, &tgz_files, max_total)
-            .map(|val| serde_wasm_bindgen::to_value(&val).unwrap())
+            .map(|val| val.into_ts().unwrap())
             .map_err(|e| JsError::from(e.as_ref()))
     }
 
@@ -143,9 +145,9 @@ impl Engine {
     /// Compile the typst sources into a [`PagedDocument`]. A main file must be specified so the Typst
     /// compiler knows where to start.
     /// To get rendered results, please call render_* methods below.
-    pub fn compile(&mut self, main_file: &str) -> Result<JsValue, JsError> {
+    pub fn compile(&mut self, main_file: &str) -> Result<Ts<CompileResult>, JsError> {
         let result = compile(&mut self.workspace, main_file)
-            .map(|val| serde_wasm_bindgen::to_value(&val).unwrap())
+            .map(|val| val.into_ts().unwrap())
             .map_err(|e| JsError::from(e.as_ref()));
 
         // Trim memoized entries recent compiles no longer touch.
@@ -257,13 +259,18 @@ impl Engine {
     /// bytes offset. Spans may nest and the result ensures parent spans always emit first.
     ///
     /// This method does not depends on a compiled document.
-    pub fn highlight(&self, source: &str, from: usize, to: usize) -> Option<JsValue> {
+    pub fn highlight(
+        &self,
+        source: &str,
+        from: usize,
+        to: usize,
+    ) -> Option<Vec<Ts<HighlightSpan>>> {
         if source.is_empty() {
             return None;
         }
 
         let spans = highlight::highlight_source(source, from, to);
-        Some(serde_wasm_bindgen::to_value(&spans).unwrap())
+        Some(spans.iter().map(|span| span.into_ts().unwrap()).collect())
     }
 
     /// Highlight typst source to html fragment wrapped in \<code\> element.

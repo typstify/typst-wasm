@@ -77,7 +77,7 @@ pub fn render_page(workspace: &Workspace, index: usize) -> Option<String> {
 /// Render a range of pages of the last compiled document to SVGs. If there is no
 /// cached document or the range start >= end, a empty list of SVGs is returned.
 ///
-/// Page range are inclusive at both boundaries.
+/// Page range are inclusive at the start and exclusive at the end boundary.
 pub fn render_pages(workspace: &Workspace, pages: Option<Range<usize>>) -> Vec<String> {
     workspace
         .map_document(|doc| {
@@ -100,7 +100,7 @@ pub fn render_pages(workspace: &Workspace, pages: Option<Range<usize>>) -> Vec<S
 /// Render the last compiled document to PDF bytes. If there is no cached document, it
 /// returns an empty `Vec`. Diagnotics are returned as [`Err`] when there is any.
 ///
-/// Page range are inclusive at both boundaries.
+/// Page range are inclusive at the start and exclusive at the end boundary.
 pub fn render_pdf(
     workspace: &Workspace,
     standards: Option<Vec<String>>,
@@ -145,7 +145,7 @@ pub fn render_pdf(
 /// Render the fist page of the last compiled document to PNG. If there is no cached document, it
 /// returns an empty `Vec`.
 ///
-/// Page range are inclusive at both boundaries.
+/// Page range are inclusive at the start and exclusive at the end boundary.
 pub fn render_png(
     workspace: &Workspace,
     ppi: i32,
@@ -157,13 +157,13 @@ pub fn render_png(
             return None;
         }
         let Range { start, end } = pages.clone().unwrap_or(0..all_pages.len());
-        let end = end.min(all_pages.len() - 1);
+        let end = end.min(all_pages.len());
         if start >= end {
             return None;
         }
 
-        let mut pixmaps: Vec<Bytes> = Vec::with_capacity(end - start + 1);
-        for page in &all_pages[start..=end] {
+        let mut pixmaps: Vec<Bytes> = Vec::with_capacity(end - start);
+        for page in &all_pages[start..end] {
             let pixmap = typst_render::render(
                 page,
                 &typst_render::RenderOptions {
