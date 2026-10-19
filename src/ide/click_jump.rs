@@ -57,12 +57,7 @@ pub fn on_page_click_jump(
             Jump::File(id, offset) => {
                 let source = world.source(id).ok()?;
                 let (line, column) = source.lines().byte_to_line_column(offset)?;
-                let file_path = world
-                    .id_to_path(id)
-                    .ok()?
-                    .into_os_string()
-                    .into_string()
-                    .ok()?;
+                let file_path = world.id_to_vpath(id);
 
                 ClickJump::Source {
                     file: file_path,

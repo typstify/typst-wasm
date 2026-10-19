@@ -62,7 +62,7 @@ impl Location {
         let source = world.source(id).ok()?;
         let (line, column) = source.lines().byte_to_line_column(range.start)?;
         Some(Location {
-            file: id.vpath().get_with_slash().to_string(),
+            file: id.vpath().get_without_slash().to_string(),
             start: range.start,
             end: range.end,
             line: line + 1, // convert to 1-based offset

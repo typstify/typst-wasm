@@ -246,8 +246,13 @@ impl Workspace {
         self.document.lock().map_err(|_| "document mutex poisoned")
     }
 
-    /// Resolves a virtual file ID to a real path on the VFS.
-    pub fn id_to_path(&self, id: FileId) -> FileResult<PathBuf> {
+    /// Resolves a virtual file ID to a virtual path within its root.
+    pub fn id_to_vpath(&self, id: FileId) -> String {
+       id.vpath().get_without_slash().to_string()
+    }
+
+      /// Resolves a virtual file ID to a real path on the VFS.
+      pub fn id_to_path(&self, id: FileId) -> FileResult<PathBuf> {
         let vpath = id.vpath();
         match id.root() {
             VirtualRoot::Project => vpath.realize(&self.root),
