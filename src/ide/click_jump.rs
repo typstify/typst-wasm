@@ -12,6 +12,7 @@ use typst::{
     layout::{Abs, Point},
 };
 use typst_ide::{self, Jump};
+use typst_syntax::VirtualRoot;
 
 /// A click jump kind in the preview which should take the user to different target:
 ///
@@ -22,6 +23,8 @@ use typst_ide::{self, Jump};
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ClickJump {
     Source {
+        /// a package spec if file is inside a package.
+        package: Option<String>,
         file: String,
         line: usize,
         column: usize,
@@ -58,8 +61,13 @@ pub fn on_page_click_jump(
                 let source = world.source(id).ok()?;
                 let (line, column) = source.lines().byte_to_line_column(offset)?;
                 let file_path = world.id_to_vpath(id);
+                let pkg = match id.root() {
+                    VirtualRoot::Project => None,
+                    VirtualRoot::Package(spec) => Some(spec.to_string()),
+                };
 
                 ClickJump::Source {
+                    package: pkg,
                     file: file_path,
                     line: line + 1,
                     column: column + 1,

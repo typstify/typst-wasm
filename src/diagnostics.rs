@@ -8,6 +8,7 @@ use typst::World;
 use typst::WorldExt;
 use typst::diag::{Severity as TypstSeverity, SourceDiagnostic};
 use typst::syntax::DiagSpan;
+use typst_syntax::VirtualRoot;
 
 /// Whether a diagnostic is a fatal error or a non-fatal warning.
 #[derive(Serialize, Tsify, Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,6 +23,8 @@ pub enum Severity {
 /// Offsets are UTF-8 byte indices, and `line`/`column` are 1-based.
 #[derive(Serialize, Tsify, Clone, PartialEq, Eq, Debug)]
 pub struct Location {
+    /// a package spec if file is inside a package.
+    pub package: Option<String>,
     pub file: String,
     pub start: usize,
     pub end: usize,
@@ -58,10 +61,17 @@ impl Location {
     /// Resolve a span to a file location, or `None` if it has no location.
     fn resolve(world: &dyn World, span: DiagSpan) -> Option<Location> {
         let id = span.id()?;
+
+        let pkg = match id.root() {
+            VirtualRoot::Project => None,
+            VirtualRoot::Package(spec) => Some(spec.to_string()),
+        };
+
         let range = world.range(span)?;
         let source = world.source(id).ok()?;
         let (line, column) = source.lines().byte_to_line_column(range.start)?;
         Some(Location {
+            package: pkg,
             file: id.vpath().get_without_slash().to_string(),
             start: range.start,
             end: range.end,

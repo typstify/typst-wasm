@@ -4,6 +4,9 @@
 build: install-deps
 	wasm-pack build --release --target bundler
 
+build-web: install-deps
+	wasm-pack build --release --target web --out-dir pkg-web
+
 # Checks if wasm-pack is installed, installs it via cargo if missing
 install-deps:
 	@command -v wasm-pack >/dev/null 2>&1 || { \
