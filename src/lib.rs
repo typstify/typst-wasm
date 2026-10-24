@@ -8,6 +8,8 @@ mod package;
 mod vfs;
 mod world;
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::str::FromStr;
 
 use tsify::{Ts, Tsify, serde_wasm_bindgen};
@@ -49,7 +51,7 @@ pub fn typst_version() -> String {
 
 #[wasm_bindgen]
 pub struct Engine {
-    workspace: Workspace,
+    workspace: Rc<RefCell<Workspace>>,
 }
 
 #[wasm_bindgen]
@@ -57,38 +59,40 @@ impl Engine {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            workspace: Workspace::new(),
+            workspace: Rc::new(RefCell::new(Workspace::new())),
         }
     }
 
     /// Add a typst package to the workspace as gzip compressed tarball and
     /// extract the package file tree into the package cache.
     pub fn add_package(
-        &mut self,
+        &self,
         spec: &str,
         tgz_files: Vec<u8>,
         max_total: u64,
     ) -> Result<Ts<UnpackSummary>, JsError> {
         let parsed_spec = PackageSpec::from_str(spec).map_err(|e| JsError::new(&e))?;
 
-        self.workspace
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut()
             .add_package_tar(parsed_spec, &tgz_files, max_total)
             .map(|val| val.into_ts().unwrap())
             .map_err(|e| JsError::from(e.as_ref()))
     }
 
     /// remove a package from the workspace by package spec.
-    pub fn remove_package(&mut self, spec: &str) -> Result<(), JsError> {
+    pub fn remove_package(&self, spec: &str) -> Result<(), JsError> {
         let parsed_spec = PackageSpec::from_str(spec).map_err(|e| JsError::new(&e))?;
 
-        self.workspace
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut()
             .remove_package(parsed_spec)
             .map_err(|e| JsError::from(e.as_ref()))
     }
 
     /// add user accessible package list to the workspace, so the editor can use this to generate
     /// completion candidates when importing packages.
-    pub fn set_accessible_packages(&mut self, packages: JsValue) -> Result<(), JsError> {
+    pub fn set_accessible_packages(&self, packages: JsValue) -> Result<(), JsError> {
         let packages: Vec<PackageMeta> =
             serde_wasm_bindgen::from_value(packages).map_err(|e| JsError::new(&e.to_string()))?;
 
@@ -101,52 +105,62 @@ impl Engine {
             })
             .collect::<Result<_, _>>()?;
 
-        self.workspace.set_accessible_packages(pkgs);
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut().set_accessible_packages(pkgs);
         Ok(())
     }
 
     // Clear all accessible package list.
-    pub fn clear_accessible_packages(&mut self) {
-        self.workspace.clear_accessible_packages();
+    pub fn clear_accessible_packages(&self) {
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut().clear_accessible_packages();
     }
     /// add font to the workspace.
-    pub fn add_font(&mut self, bytes: Vec<u8>) -> Vec<String> {
-        self.workspace.add_font(bytes)
+    pub fn add_font(&self, bytes: Vec<u8>) -> Vec<String> {
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut().add_font(bytes)
     }
 
     /// clear all custom fonts in the workspace. We don't have a remove_font
     /// method so caller must call clear_fonts first then call add_font
     /// to add other fonts back.
-    pub fn clear_fonts(&mut self) {
-        self.workspace.clear_fonts();
+    pub fn clear_fonts(&self) {
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut().clear_fonts();
     }
 
     /// Insert or replace normal files into the user workspace.
     /// The `file_path` is a path relative to the workspace `source_dir`.
-    pub fn set_file(&mut self, file_path: &str, bytes: Vec<u8>) -> Result<(), JsError> {
-        self.workspace
+    pub fn set_file(&self, file_path: &str, bytes: Vec<u8>) -> Result<(), JsError> {
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut()
             .set_file(file_path, bytes)
             .map_err(|e| JsError::from(e.as_ref()))
     }
 
     /// Remove normal files from the user workspace.
     /// The `file_path` is a path relative to the workspace `source_dir`.
-    pub fn remove_file(&mut self, file_path: &str) -> Result<(), JsError> {
-        self.workspace
+    pub fn remove_file(&self, file_path: &str) -> Result<(), JsError> {
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut()
             .remove_file(file_path)
             .map_err(|e| JsError::from(e.as_ref()))
     }
 
-    pub fn set_today(&mut self, year: i32, month: u8, day: u8, hour: u8, minute: u8, second: u8) {
-        self.workspace
+    pub fn set_today(&self, year: i32, month: u8, day: u8, hour: u8, minute: u8, second: u8) {
+        let ws = Rc::clone(&self.workspace);
+        ws.borrow_mut()
             .set_today(year, month, day, hour, minute, second);
     }
 
     /// Compile the typst sources into a [`PagedDocument`]. A main file must be specified so the Typst
     /// compiler knows where to start.
     /// To get rendered results, please call render_* methods below.
-    pub fn compile(&mut self, main_file: &str) -> Result<Ts<CompileResult>, JsError> {
-        let result = compile(&mut self.workspace, main_file)
+    pub fn compile(&self, main_file: &str) -> Result<Ts<CompileResult>, JsError> {
+        let rc = Rc::clone(&self.workspace);
+        let mut ws = rc.borrow_mut();
+
+        let result = compile(&mut ws, main_file)
             .map(|val| val.into_ts().unwrap())
             .map_err(|e| JsError::from(e.as_ref()));
 
@@ -159,7 +173,9 @@ impl Engine {
     /// Render a single page of the last compiled document to SVG, or `None` if there is no
     /// cached document or index is out of range.
     pub fn render_page(&self, index: usize) -> Option<String> {
-        render_page(&self.workspace, index)
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        render_page(&ws, index)
     }
 
     /// Render a range of pages of the last compiled document to SVGs. If there is no
@@ -171,7 +187,10 @@ impl Engine {
             (Some(s), Some(e)) => Some(s..e),
             _ => None,
         };
-        render_pages(&self.workspace, pages)
+
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        render_pages(&ws, pages)
     }
 
     /// Render the last compiled document to PDF bytes. If there is no cached document, it
@@ -192,7 +211,9 @@ impl Engine {
             _ => None, // Falls back to rendering everything if bounds aren't fully provided
         };
 
-        render_pdf(&self.workspace, standards, use_tag, pages)
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        render_pdf(&ws, standards, use_tag, pages)
             .map(|val| val.to_vec())
             .map_err(|diags| diags.into_iter().map(|d| d.into_ts().unwrap()).collect())
     }
@@ -212,7 +233,9 @@ impl Engine {
             _ => None, // Falls back to rendering everything if bounds aren't fully provided
         };
 
-        render_png(&self.workspace, ppi, pages)
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        render_png(&ws, ppi, pages)
             .map(|pages| {
                 pages
                     .into_iter()
@@ -228,12 +251,14 @@ impl Engine {
         explicit: bool,
         cursor: usize,
     ) -> Result<Ts<CompletionResult>, JsError> {
-        let id = self
-            .workspace
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+
+        let id = ws
             .source_id(source_path)
             .map_err(|err| JsError::from(err.as_ref()))?;
 
-        auto_complete(&self.workspace, id, explicit, cursor)
+        auto_complete(&ws, id, explicit, cursor)
             .and_then(|c| {
                 let ts = c.into_ts()?;
                 Ok(ts)
@@ -242,11 +267,13 @@ impl Engine {
     }
 
     pub fn hover(&self, source_path: &str, cursor: usize) -> Option<Ts<HoverTooltip>> {
-        let Ok(id) = self.workspace.source_id(source_path) else {
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        let Ok(id) = ws.source_id(source_path) else {
             return None;
         };
 
-        on_hover(&self.workspace, id, cursor).and_then(|v| {
+        on_hover(&ws, id, cursor).and_then(|v| {
             let Ok(ts) = v.into_ts() else {
                 return None;
             };
@@ -289,14 +316,16 @@ impl Engine {
     /// `format_cfg` is deserialized to [`Config`] internally, to see all possible config keys,
     /// refer to the `Config` document.
     pub fn format_source(&self, source_path: &str, format_cfg: Option<JsValue>) -> Option<String> {
-        let Ok(id) = self.workspace.source_id(source_path) else {
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        let Ok(id) = ws.source_id(source_path) else {
             return None;
         };
 
         let format_cfg =
             format_cfg.and_then(|val| serde_wasm_bindgen::from_value::<Config>(val).ok());
 
-        format::format_source(&self.workspace, id, format_cfg)
+        format::format_source(&ws, id, format_cfg)
     }
 
     /// Resolve a click on the page of the cached document into a source file location,
@@ -305,7 +334,9 @@ impl Engine {
     ///
     /// page_index is zero-based page index. x, y is the pixel position in the page.
     pub fn on_page_click_jump(&self, page_index: usize, x: f64, y: f64) -> Option<Ts<ClickJump>> {
-        click_jump::on_page_click_jump(&self.workspace, page_index, x, y).and_then(|c| {
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        click_jump::on_page_click_jump(&ws, page_index, x, y).and_then(|c| {
             let Ok(ts) = c.into_ts() else {
                 return None;
             };
@@ -322,7 +353,9 @@ impl Engine {
         source_path: &str,
         cursor: usize,
     ) -> Option<Ts<CursorJump>> {
-        click_jump::on_source_cursor_jump(&self.workspace, source_path, cursor).and_then(|c| {
+        let rc = Rc::clone(&self.workspace);
+        let ws = rc.borrow();
+        click_jump::on_source_cursor_jump(&ws, source_path, cursor).and_then(|c| {
             let Ok(ts) = c.into_ts() else {
                 return None;
             };
