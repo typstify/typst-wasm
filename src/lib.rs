@@ -370,3 +370,10 @@ impl Default for Engine {
         Self::new()
     }
 }
+
+
+#[wasm_bindgen(start)]
+pub fn init() {
+    // This hooks Rust panics into console.error so we see the exact file and line number.
+    console_error_panic_hook::set_once();
+}

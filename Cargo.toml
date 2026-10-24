@@ -36,6 +36,7 @@ comemo = "0.5.1"
 js-sys = "0.3.106"
 typst-ide = "0.15.1"
 typstyle-core = { version = "0.15.2", features = ["serde"] }
+console_error_panic_hook = "0.1.7"
 
 
 # Keep the wasm binary small.
