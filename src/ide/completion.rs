@@ -87,7 +87,8 @@ pub struct CompletionResult {
 }
 
 /// handling auto-completion request from editor and returns completion candidates
-/// if there is any.
+/// if there is any. cursor is the bytes offset inside the document, it is clamped
+/// to the previous utf8 char boundary if it's inside the utf8 code point.
 pub fn auto_complete(
     world: &Workspace,
     source_id: FileId,
@@ -95,6 +96,12 @@ pub fn auto_complete(
     cursor: usize,
 ) -> Result<CompletionResult, Box<dyn Error>> {
     let source = world.source(source_id)?;
+
+    // clamp cursor to the previous character boundary.
+    let mut cursor = cursor.min(source.text().len());
+    while cursor > 0 && !source.text().is_char_boundary(cursor) {
+        cursor -= 1;
+    }
 
     let doc_guard = world.document();
 

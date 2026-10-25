@@ -237,8 +237,12 @@ impl Workspace {
     where
         F: Fn(&PagedDocument) -> Option<R>,
     {
-        let doc = self.document.lock().unwrap();
-        doc.as_ref().and_then(func)
+        // Clone the document out of the lock before invoking the callback.
+        // Rendering SVG can be lengthy, and callbacks such as typst-svg's
+        // image/font resolvers must never observe the document mutex held
+        // across their execution.
+        let doc = self.document.lock().unwrap().as_ref().cloned()?;
+        func(&doc)
     }
 
     // Get a mutex guared document reference for use outside the world.
