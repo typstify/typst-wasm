@@ -2812,7 +2812,6 @@ dependencies = [
  "tar",
  "tsify",
  "typst",
- "typst-assets",
  "typst-ide",
  "typst-layout",
  "typst-library",
