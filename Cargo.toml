@@ -37,6 +37,9 @@ typst-ide = "0.15.1"
 typstyle-core = { version = "0.15.2", features = ["serde"] }
 console_error_panic_hook = "0.1.7"
 
+[dev-dependencies]
+wasm-bindgen-test = "0.2"
+
 
 # Keep the wasm binary small.
 [profile.release]

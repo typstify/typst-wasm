@@ -1,3 +1,5 @@
+[![CI](https://github.com/typstify/typst-wasm/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/typstify/typst-wasm/actions/workflows/rust.yml)
+
 # typst-wasm
 
 `typst-wasm` builds a wrapper around the Typst compiler and its IDE facilities into WebAssembly, so
