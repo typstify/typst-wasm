@@ -49,7 +49,7 @@ using GZIP or Brotli, the result size can be largely decreased:
 | --------  | ---- |
 | Original | 27Mb |
 | Gzipped  | 12Mb |
-| Brotili compressed | 8.4Mb |
+| Brotli compressed | 8.4Mb |
 
 ## Run the demo
 
